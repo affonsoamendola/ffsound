@@ -1,2 +1,2 @@
 sb.h(40): Warning! W138: No newline at end of file
-sb.c(306): Warning! W131: No prototype found for function 'getch'
+sb.c(388): Warning! W131: No prototype found for function 'getch'

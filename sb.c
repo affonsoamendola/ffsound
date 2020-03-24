@@ -8,7 +8,6 @@ typedef struct SB_OPERATOR_
 
 	char key_scale_level;    			//Most fields are self explanatory
 	char frequency_multiplier;			//4 bits
-	char feedback_modulation_factor;	//3 bits
 	char attack_rate;					//4 bits
 	char sustain_level;					//4 bits
 	char sustain_enable;				//1 bit on or off
@@ -27,11 +26,13 @@ typedef struct SB_INSTRUMENT_
 	char* name;
 	SB_OPERATOR modulator; //Remember modulator modulates the carrier.
 	SB_OPERATOR carrier;
+	char feedback_modulation_factor;	//3 bits
 	char type_of_synth; //0 for fm synth 1 for additive synth
 
 }SB_INSTRUMENT;
 
-void sb_reset_dsp()
+//Resets the DSP for new use
+void sb_reset_dsp()			
 {
 	_asm {
 			mov 	dx, SB_DSP_RESET
@@ -66,6 +67,7 @@ void sb_reset_dsp()
 		 }
 }
 
+//Reads a byte from the DSP
 char sb_read_dsp()
 {
 	char dsp_data = 0;
@@ -85,6 +87,7 @@ char sb_read_dsp()
 	return dsp_data;
 }
 
+//Writes a byte to the DSP
 void sb_write_dsp(char data)
 {
 	_asm{
@@ -116,6 +119,7 @@ void sb_fm_select_register(char register_index)
 		}
 }
 
+//Writes a byte to the data register of the FM Synthesizer (OPL chip)
 void sb_fm_write_data_register(char register_data)
 {
 	_asm{
@@ -307,7 +311,7 @@ void sb_load_instrument(SB_INSTRUMENT instrument, char channel)
 {
 	int carrier_op_offset;
 
-	int modulator_op_offset = channel
+	int modulator_op_offset = channel;
 	if(modulator_op_offset >= 3) modulator_op_offset += 3;			//This is all code to define the offset,
 	if(modulator_op_offset >= 6) modulator_op_offset += 3;			//There are some stupid rules, check the manual
 
@@ -373,7 +377,6 @@ void sb_load_instrument(SB_INSTRUMENT instrument, char channel)
 	sb_fm_select_register(0xC0 + channel); 	
 	sb_fm_write_data_register(	instrument.feedback_modulation_factor << 1 | 
 								instrument.type_of_synth);
-
 }
 
 int main(int argc, char * argv[])
