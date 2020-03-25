@@ -3,33 +3,71 @@
 
 #include "sb.h"
 
-typedef struct SB_OPERATOR_
-{
+SB_CHANNEL_STRUCT SB_CHANNELS[8];
 
-	char key_scale_level;    			//Most fields are self explanatory
-	char frequency_multiplier;			//4 bits
-	char attack_rate;					//4 bits
-	char sustain_level;					//4 bits
-	char sustain_enable;				//1 bit on or off
-	char decay_rate;					//4 bits
-	char release_rate;					//4 bits
-	char output_level;					//6 bits
-	char amplitude_vibrato;				//1 bit on or off
-	char frequency_vibrato;				//1 bit on or off
-	char envelope_scaling;				//1 bit on or off
-	char waveform;						//2 bits
+SB_INSTRUMENT * SB_INSTRUMENT_BANK;
 
-}SB_OPERATOR;
+//This is just for debugging
+void hexDump (const char * desc, const void * addr, const int len) {
+    int i;
+    unsigned char buff[17];
+    const unsigned char * pc = (const unsigned char *)addr;
 
-typedef struct SB_INSTRUMENT_
-{
-	char* name;
-	SB_OPERATOR modulator; //Remember modulator modulates the carrier.
-	SB_OPERATOR carrier;
-	char feedback_modulation_factor;	//3 bits
-	char type_of_synth; //0 for fm synth 1 for additive synth
+    // Output description if given.
 
-}SB_INSTRUMENT;
+    if (desc != NULL)
+        printf ("%s:\n", desc);
+
+    // Length checks.
+
+    if (len == 0) {
+        printf("  ZERO LENGTH\n");
+        return;
+    }
+    else if (len < 0) {
+        printf("  NEGATIVE LENGTH: %d\n", len);
+        return;
+    }
+
+    // Process every byte in the data.
+
+    for (i = 0; i < len; i++) {
+        // Multiple of 16 means new line (with line offset).
+
+        if ((i % 16) == 0) {
+            // Don't print ASCII buffer for the "zeroth" line.
+
+            if (i != 0)
+                printf ("  %s\n", buff);
+
+            // Output the offset.
+
+            printf ("  %04x ", i);
+        }
+
+        // Now the hex code for the specific character.
+        printf (" %02x", pc[i]);
+
+        // And buffer a printable ASCII character for later.
+
+        if ((pc[i] < 0x20) || (pc[i] > 0x7e)) // isprint() may be better.
+            buff[i % 16] = '.';
+        else
+            buff[i % 16] = pc[i];
+        buff[(i % 16) + 1] = '\0';
+    }
+
+    // Pad out last line if not exactly 16 characters.
+
+    while ((i % 16) != 0) {
+        printf ("   ");
+        i++;
+    }
+
+    // And print the final ASCII buffer.
+
+    printf ("  %s\n", buff);
+}
 
 //Resets the DSP for new use
 void sb_reset_dsp()			
@@ -166,12 +204,6 @@ void sb_fm_write_data_register(char register_data)
 		}
 }
 
-typedef enum NOTE_
-{
-
-	C, Cs, D, Ds, E, F, Fs, G, Gs, A, As, B
-} NOTE;
-
 //Frequency Table, [Octave][Note (Starting at C=0 through B=11)]
 const unsigned int freq_table[8][12] = { 	16,   17,   18,   19,   21,   22,   23,   24,   26,   27,   29,   31,
 									 	 	33,   35,   37,   39,   41,   44,   46,   49,   52,   55,   58,   62,
@@ -195,7 +227,7 @@ const int f_num_table[8][12] = { 	345, 365, 387, 410, 435, 460, 488, 517, 547, 5
 
 //Determines which block to use for each frequency, since the equality block = octave is not really true.
 //[Octave][Note (Starting at C=0 through B=11)]	
-const int f_block_table[8][12] = {  0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+const char f_block_table[8][12] = {  0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
 									0,   0,   0,   0,   0,   0,   0,   1,   1,   1,   1,   1,
 									1,   1,   1,   1,   1,   1,   1,   2,   2,   2,   2,   2,
 									2,   2,   2,   2,   2,   2,   2,   3,   3,   3,   3,   3,
@@ -298,13 +330,36 @@ void sb_init_fm()
 
 void sb_key_on(int channel, NOTE note, int octave)
 {
-	int f_num = f_num_table[octave][note];
-	int f_block = f_block_table[octave][note];
+	if(SB_CHANNELS[channel].key_on == 0)
+	{
+		int f_num = f_num_table[octave][note];
+		char f_block = f_block_table[octave][note];
 
-	sb_fm_select_register(0xA0 + channel); //Select Frequency number (low) 
-	sb_fm_write_data_register((char)(0xFF & f_num));  //Put f_num on register
-	sb_fm_select_register(0xB0 + channel); //Select Key On, Block Number, Frequency number (high) for each ch channel
-	sb_fm_write_data_register((char) ((0x3 & (f_num>>8)) | (f_block << 2) | 0x20) );  //Put Default f_num for each channel
+		SB_CHANNELS[channel].key_on = 1;
+		SB_CHANNELS[channel].note = note;
+		SB_CHANNELS[channel].octave = octave;
+		SB_CHANNELS[channel].f_num = f_num;
+		SB_CHANNELS[channel].f_block = f_block;
+
+		sb_fm_select_register(0xA0 + channel); //Select Frequency number (low) 
+		sb_fm_write_data_register((char)(0xFF & f_num));  //Put f_num on register
+		sb_fm_select_register(0xB0 + channel); //Select Key On, Block Number, Frequency number (high) for each ch channel
+		sb_fm_write_data_register((char) ((0x3 & (f_num>>8)) | (f_block << 2) | 0x20) );  //Put Default f_num for each channel
+	}
+}
+
+void sb_key_off(int channel)
+{
+	if(SB_CHANNELS[channel].key_on == 1)
+	{
+		int f_num = SB_CHANNELS[channel].f_num;
+		char f_block = SB_CHANNELS[channel].f_block;
+
+		SB_CHANNELS[channel].key_on = 0;
+
+		sb_fm_select_register(0xB0 + channel); //Select Key On, Block Number, Frequency number (high) for each ch channel
+		sb_fm_write_data_register((char) ((0x3 & (f_num>>8)) | (f_block << 2)) );  //Put Default f_num for each channel
+	}
 }
 
 void sb_load_instrument(SB_INSTRUMENT instrument, char channel)
@@ -377,13 +432,199 @@ void sb_load_instrument(SB_INSTRUMENT instrument, char channel)
 	sb_fm_select_register(0xC0 + channel); 	
 	sb_fm_write_data_register(	instrument.feedback_modulation_factor << 1 | 
 								instrument.type_of_synth);
+
+	SB_CHANNELS[channel].loaded_instrument = instrument;
+	SB_CHANNELS[channel].key_on = 0;
 }
 
-int main(int argc, char * argv[])
+void sb_load_instrument_file(const char* path, SB_INSTRUMENT * instrument)
 {
-	sb_init_fm();
-	sb_key_on(0, C, 4);
-	getch();
+	int i = 0;
+	FILE * instrument_file = fopen(path, "r");
+
+	for(i = 0; i < 8; i++)
+	{
+		instrument->name[i] = fgetc(instrument_file);
+	}
+
+	instrument->modulator.key_scale_level = 		(fgetc(instrument_file) & 0x03);
+	instrument->modulator.frequency_multiplier = 	(fgetc(instrument_file) & 0x0F);
+	instrument->modulator.attack_rate = 			(fgetc(instrument_file) & 0x0F);
+	instrument->modulator.sustain_level = 			(fgetc(instrument_file) & 0x0F);
+	instrument->modulator.sustain_enable = 			(fgetc(instrument_file) & 0x01);
+	instrument->modulator.decay_rate = 				(fgetc(instrument_file) & 0x0F);
+	instrument->modulator.release_rate = 			(fgetc(instrument_file) & 0x0F);
+	instrument->modulator.output_level = 			(fgetc(instrument_file) & 0x3F);
+	instrument->modulator.amplitude_vibrato = 		(fgetc(instrument_file) & 0x01);
+	instrument->modulator.frequency_vibrato = 		(fgetc(instrument_file) & 0x01);
+	instrument->modulator.envelope_scaling = 		(fgetc(instrument_file) & 0x01);
+	instrument->modulator.waveform = 				(fgetc(instrument_file) & 0x03);
+
+	instrument->carrier.key_scale_level = 			(fgetc(instrument_file) & 0x03);
+	instrument->carrier.frequency_multiplier = 		(fgetc(instrument_file) & 0x0F);
+	instrument->carrier.attack_rate = 				(fgetc(instrument_file) & 0x0F);
+	instrument->carrier.sustain_level = 			(fgetc(instrument_file) & 0x0F);
+	instrument->carrier.sustain_enable = 			(fgetc(instrument_file) & 0x01);
+	instrument->carrier.decay_rate = 				(fgetc(instrument_file) & 0x0F);
+	instrument->carrier.release_rate = 				(fgetc(instrument_file) & 0x0F);
+	instrument->carrier.output_level = 				(fgetc(instrument_file) & 0x3F);
+	instrument->carrier.amplitude_vibrato = 		(fgetc(instrument_file) & 0x01);
+	instrument->carrier.frequency_vibrato = 		(fgetc(instrument_file) & 0x01);
+	instrument->carrier.envelope_scaling = 			(fgetc(instrument_file) & 0x01);
+	instrument->carrier.waveform = 					(fgetc(instrument_file) & 0x03);
+
+	instrument->feedback_modulation_factor = 		(fgetc(instrument_file) & 0x07);
+	instrument->type_of_synth = 					(fgetc(instrument_file) & 0x01);
+
+	fclose(instrument_file);
+}
+
+int sb_load_instrument_bank(const char* path, SB_INSTRUMENT** instrument_bank)
+{
+	int i = 0;
+
+	unsigned int instrument_number_used = 0;
+	unsigned int instrument_number_all = 0;
+
+	long unsigned int name_list_offset = 0;
+	long unsigned int data_start_offset = 0;
+
+	unsigned int used_instrument_index = 0;
+
+	SB_INSTRUMENT * current_instrument_data;
+
+	FILE * instrument_file = fopen(path, "r");
+
+	fgetc(instrument_file); //Skip file version Major
+	fgetc(instrument_file); //Skip file version minor
+
+	if(fgetc(instrument_file) != 'A') return -1;
+	if(fgetc(instrument_file) != 'D') return -1;
+	if(fgetc(instrument_file) != 'L') return -1;
+	if(fgetc(instrument_file) != 'I') return -1;
+	if(fgetc(instrument_file) != 'B') return -1;
+	if(fgetc(instrument_file) != '-') return -1;	//Check file signature
+
+	instrument_number_used |=  (unsigned int)fgetc(instrument_file);
+	instrument_number_used |= ((unsigned int)fgetc(instrument_file) << 8);  //Get number of instruments used (UINT16LE)
+
+	instrument_number_all |=  (unsigned int)fgetc(instrument_file);
+	instrument_number_all |= ((unsigned int)fgetc(instrument_file) << 8);  //Get number of instruments used (UINT16LE)
+
+	name_list_offset |=  (long unsigned int)fgetc(instrument_file);
+	name_list_offset |= ((long unsigned int)fgetc(instrument_file) << 8);  
+	name_list_offset |= ((long unsigned int)fgetc(instrument_file) << 16);  
+	name_list_offset |= ((long unsigned int)fgetc(instrument_file) << 24);  //Get absolute index of name_list (UINT32LE)
+
+	data_start_offset |=  (long unsigned int)fgetc(instrument_file);
+	data_start_offset |= ((long unsigned int)fgetc(instrument_file) << 8);  
+	data_start_offset |= ((long unsigned int)fgetc(instrument_file) << 16);  
+	data_start_offset |= ((long unsigned int)fgetc(instrument_file) << 24);  //Get absolute index of name_list (UINT32LE)
+
+	fgetc(instrument_file);
+	fgetc(instrument_file);
+	fgetc(instrument_file);
+	fgetc(instrument_file);
+	fgetc(instrument_file);
+	fgetc(instrument_file);
+	fgetc(instrument_file);
+	fgetc(instrument_file);			//Padding
+
+	*instrument_bank = malloc(sizeof(SB_INSTRUMENT) * instrument_number_used);
+
+	for(i = 0; i < instrument_number_all; i ++)
+	{
+		unsigned int data_index = 0;
+		long unsigned int data_offset;
+
+		fseek(instrument_file, name_list_offset + i * (12), 0); //12 is the number of bytes for each instrument name record
+															   //This puts the stream pointer at the right byte.
+
+		data_index |= (unsigned int)fgetc(instrument_file);
+		data_index |= (unsigned int)fgetc(instrument_file) << 8;
+
+		//debug prints printf("CURRENTLY READING INSTR N %d\n", i);
+
+		if(fgetc(instrument_file) == 1)		//If record is used, go find its data section and read it.
+		{
+		/*
+			getch();
+			printf("IS USED\n");
+		*/
+			current_instrument_data = ((*instrument_bank) + used_instrument_index);
+			//^ Sets current instrument data to point to the currently being written to memory instrument
+
+			current_instrument_data->name[0] = fgetc(instrument_file);
+			current_instrument_data->name[1] = fgetc(instrument_file);
+			current_instrument_data->name[2] = fgetc(instrument_file);
+			current_instrument_data->name[3] = fgetc(instrument_file);
+			current_instrument_data->name[4] = fgetc(instrument_file);
+			current_instrument_data->name[5] = fgetc(instrument_file);
+			current_instrument_data->name[6] = fgetc(instrument_file);
+			current_instrument_data->name[7] = fgetc(instrument_file); //Gets instrument name.
+
+			// Debug printprintf(current_instrument_data->name);
+
+			data_offset = data_start_offset + data_index * (30);  //30 is the number of bytes of each instrument data record 
+			
+			fseek(instrument_file, data_offset-1, 0); 
+
+			current_instrument_data->percurssive = (fgetc(instrument_file) & 0x01);
+			current_instrument_data->voice_number = fgetc(instrument_file); //Still Dont know what this does, but its unused right now.
+
+			current_instrument_data->modulator.key_scale_level      = 	(fgetc(instrument_file) & 0x03);	//Gets all values for the modulator
+			current_instrument_data->modulator.frequency_multiplier =	(fgetc(instrument_file) & 0x0F);
+			current_instrument_data->feedback_modulation_factor 	=	(fgetc(instrument_file) & 0x07);	//Only has a significant value for the modulator
+			current_instrument_data->modulator.attack_rate			=	(fgetc(instrument_file) & 0x0F);
+			current_instrument_data->modulator.sustain_level		=	(fgetc(instrument_file) & 0x0F);
+			current_instrument_data->modulator.sustain_enable		=	(fgetc(instrument_file) & 0x01);
+			current_instrument_data->modulator.decay_rate			=	(fgetc(instrument_file) & 0x0F);
+			current_instrument_data->modulator.release_rate			=	(fgetc(instrument_file) & 0x0F);
+			current_instrument_data->modulator.output_level			=	(fgetc(instrument_file) & 0x3F);
+			current_instrument_data->modulator.amplitude_vibrato	=	(fgetc(instrument_file) & 0x01);
+			current_instrument_data->modulator.frequency_vibrato	=	(fgetc(instrument_file) & 0x01);
+			current_instrument_data->modulator.envelope_scaling		=	(fgetc(instrument_file) & 0x01);
+			current_instrument_data->type_of_synth					=	(fgetc(instrument_file) & 0x01);	//Only has a significant value for the modulator
+
+			/*
+			printf("%d\n", current_instrument_data->modulator.key_scale_level)      ;	//Gets all values for the modulator
+			printf("%d\n", current_instrument_data->modulator.frequency_multiplier) ;
+			printf("%d\n", current_instrument_data->feedback_modulation_factor 	);	//Only has a significant value for the modulator
+			printf("%d\n", current_instrument_data->modulator.attack_rate		)	;
+			printf("%d\n", current_instrument_data->modulator.sustain_level		);
+			printf("%d\n", current_instrument_data->modulator.sustain_enable	)	;
+			printf("%d\n", current_instrument_data->modulator.decay_rate		)	;
+			printf("%d\n", current_instrument_data->modulator.release_rate		)	;
+			printf("%d\n", current_instrument_data->modulator.output_level		)	;
+			printf("%d\n", current_instrument_data->modulator.amplitude_vibrato	);
+			printf("%d\n", current_instrument_data->modulator.frequency_vibrato	);
+			printf("%d\n", current_instrument_data->modulator.envelope_scaling		);
+			printf("%d\n", current_instrument_data->type_of_synth);
+			*/
+
+			current_instrument_data->carrier.key_scale_level      	= 	(fgetc(instrument_file) & 0x03);	//Gets all values for the carrier
+			current_instrument_data->carrier.frequency_multiplier 	=	(fgetc(instrument_file) & 0x0F);
+			fgetc(instrument_file);																			//Skips irrelevant data
+			current_instrument_data->carrier.attack_rate			=	(fgetc(instrument_file) & 0x0F);
+			current_instrument_data->carrier.sustain_level			=	(fgetc(instrument_file) & 0x0F);
+			current_instrument_data->carrier.sustain_enable			=	(fgetc(instrument_file) & 0x01);
+			current_instrument_data->carrier.decay_rate				=	(fgetc(instrument_file) & 0x0F);
+			current_instrument_data->carrier.release_rate			=	(fgetc(instrument_file) & 0x0F);
+			current_instrument_data->carrier.output_level			=	(fgetc(instrument_file) & 0x3F);
+			current_instrument_data->carrier.amplitude_vibrato		=	(fgetc(instrument_file) & 0x01);
+			current_instrument_data->carrier.frequency_vibrato		=	(fgetc(instrument_file) & 0x01);	
+			current_instrument_data->carrier.envelope_scaling		=	(fgetc(instrument_file) & 0x01);	
+			fgetc(instrument_file);																			//Skips irrelevant data
+			
+			current_instrument_data->modulator.waveform				=	(fgetc(instrument_file) & 0x03);
+			current_instrument_data->carrier.waveform				=	(fgetc(instrument_file) & 0x03);
+
+			used_instrument_index += 1;		//Increases the currently used instrument number, so that we know where to put the next one on the 
+											//Instrument bank struct
+		}
+	}
+
+	fclose(instrument_file);
 
 	return 0;
 }

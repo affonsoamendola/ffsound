@@ -3,7 +3,7 @@
 #	Foffonso's Sound Blaster Xperiment				#
 #---------------------------------------------------#
 
-obj = sb.obj
+obj = sb.obj keyb.obj sbkey.obj
 bin = sb.exe
 
 CC = wcc
