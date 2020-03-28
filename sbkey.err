@@ -1,0 +1,3 @@
+sb.h(100): Warning! W138: No newline at end of file
+sbkey.c(100): Warning! W131: No prototype found for function 'change_instrument'
+sbkey.c(207): Warning! W131: No prototype found for function 'Keyboard_Install_Driver'

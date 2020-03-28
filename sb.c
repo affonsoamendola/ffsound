@@ -157,6 +157,19 @@ void sb_fm_select_register(char register_index)
 		}
 }
 
+char sb_fm_read_status()
+{
+	char status;
+
+	_asm{
+		mov 	dx, SB_FM_MUSIC_ADDRESS
+		in 		al,	dx
+		mov 	status, al
+		}
+
+	return status;
+}
+
 //Writes a byte to the data register of the FM Synthesizer (OPL chip)
 void sb_fm_write_data_register(char register_data)
 {
@@ -362,11 +375,14 @@ void sb_key_off(int channel)
 	}
 }
 
-void sb_load_instrument(SB_INSTRUMENT instrument, char channel)
+void sb_load_instrument(int instrument_no, char channel)
 {
 	int carrier_op_offset;
 
 	int modulator_op_offset = channel;
+	
+	SB_INSTRUMENT instrument = SB_INSTRUMENT_BANK[instrument_no];
+
 	if(modulator_op_offset >= 3) modulator_op_offset += 3;			//This is all code to define the offset,
 	if(modulator_op_offset >= 6) modulator_op_offset += 3;			//There are some stupid rules, check the manual
 

@@ -96,5 +96,8 @@ void sb_load_instrument(SB_INSTRUMENT instrument, char channel);
 void sb_load_instrument_file(const char* path, SB_INSTRUMENT * instrument);
 int sb_load_instrument_bank(const char* path, SB_INSTRUMENT** instrument_bank);
 
+void sb_fm_select_register(char register_index);
+char sb_fm_read_status();
+void sb_fm_write_data_register(char register_data);
 
 #endif
