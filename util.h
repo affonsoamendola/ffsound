@@ -1,6 +1,9 @@
 #ifndef FF_UTIL
 #define FF_UTIL
 
-inline char readc_stream(char ** byte_stream);
+char readc_stream(char far ** byte_stream);
+
+unsigned long int fgeti32le(FILE * file);
+unsigned int fgeti16le(FILE * file);
 
 #endif

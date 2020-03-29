@@ -191,7 +191,7 @@ void On_Key_Up(int scan_code)
 
 void change_instrument(int instrument_number)
 {
-	sb_load_instrument(SB_INSTRUMENT_BANK[instrument_number], 0);
+	sb_load_instrument(instrument_number, 0);
 }
 
 int main(int argc, char * argv[])
@@ -208,7 +208,7 @@ int main(int argc, char * argv[])
 	sb_init_fm();
 
 	sb_load_instrument_bank("instbank.bnk", &SB_INSTRUMENT_BANK);
-	sb_load_instrument(SB_INSTRUMENT_BANK[0], 0);
+	sb_load_instrument(0, 0);
 
 	_clearscreen(0);
 	_displaycursor(0);

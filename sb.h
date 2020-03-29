@@ -91,7 +91,7 @@ void sb_init_fm();
 void sb_key_on(int channel, NOTE note, int octave);
 void sb_key_off(int channel);
 
-void sb_load_instrument(SB_INSTRUMENT instrument, char channel);
+void sb_load_instrument(int instrument_no, char channel);
 
 void sb_load_instrument_file(const char* path, SB_INSTRUMENT * instrument);
 int sb_load_instrument_bank(const char* path, SB_INSTRUMENT** instrument_bank);
